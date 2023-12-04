@@ -176,6 +176,10 @@ func NewParser(in io.Reader, bytesToRead int64, frameChannel chan *frame.Frame, 
 	return &p, nil
 }
 
+// DefaultEncodingName is value used for tag SpecificCharacterSet if it can't be
+// parsed to a valid encoding name
+const DefaultEncodingName = "ISO_IR 6"
+
 // Next parses and returns the next top-level element from the DICOM this Parser points to.
 func (p *Parser) Next() (*Element, error) {
 	if !p.reader.moreToRead() {
@@ -195,16 +199,23 @@ func (p *Parser) Next() (*Element, error) {
 
 	if elem.Tag == tag.SpecificCharacterSet {
 		encodingNames := MustGetStrings(elem.Value)
+		// try parsing the original value
 		cs, err := charset.ParseSpecificCharacterSet(encodingNames, p.reader.opts.customDecoderOfSpecificCharacterSet)
+		// try fixing spelling error
 		if err != nil {
 			for i := range encodingNames {
 				encodingNames[i] = FixCommonSpellingErrorInSpecificCharacterSet(encodingNames[i])
 			}
 			cs, err = charset.ParseSpecificCharacterSet(encodingNames, p.reader.opts.customDecoderOfSpecificCharacterSet)
 		}
+		// use default if other options can't be parsed
 		if err != nil {
-			// unable to parse character set, hard error
-			// TODO: add option continue, even if unable to parse
+			for i := range encodingNames {
+				encodingNames[i] = DefaultEncodingName
+			}
+			cs, err = charset.ParseSpecificCharacterSet(encodingNames, p.reader.opts.customDecoderOfSpecificCharacterSet)
+		}
+		if err != nil {
 			return nil, err
 		}
 		p.reader.rawReader.SetCodingSystem(cs)
@@ -217,15 +228,15 @@ func (p *Parser) Next() (*Element, error) {
 
 // FixCommonSpellingErrorInSpecificCharacterSet references _python_encoding_for_corrected_encoding in https://github.com/pydicom/pydicom/
 func FixCommonSpellingErrorInSpecificCharacterSet(specificCharacterSet string) string {
-	defaultSpecificCharacterSet := "" // corresponds to iso-8859-1 in htmlEncodingNames in pkg/charset
+	defaultSpecificCharacterSet := DefaultEncodingName // corresponds to iso-8859-1 in htmlEncodingNames in pkg/charset
 	fixed := defaultSpecificCharacterSet
 	if match := regexp.MustCompile(`^ISO.IR`).MatchString(specificCharacterSet); match {
 		fixed = "ISO_IR" + specificCharacterSet[6:]
 	} else if match := regexp.MustCompile(`^ISO.2022.IR.`).MatchString(specificCharacterSet); match {
 		fixed = "ISO 2022 IR " + specificCharacterSet[12:]
 	}
+	errLogger := log.New(os.Stderr, "", 0) // avoid altering the output for future use
 	if fixed != specificCharacterSet {
-		errLogger := log.New(os.Stderr, "", 0) // avoid altering the output for future use
 		errLogger.Printf("Incorrect value for Specific Character Set '%s' - assuming %s", specificCharacterSet, fixed)
 	}
 	return fixed

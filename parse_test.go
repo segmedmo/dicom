@@ -75,8 +75,7 @@ func TestParseUntilEOF(t *testing.T) {
 }
 
 func TestParseFile_WithTagSpecificCharacterSetToEncodingNameConverter(t *testing.T) {
-	aDicomFileHavingNonStandardSpecificCharacterSet := "./testdata/malformed/1.dcm"
-	t.Run("WithCustomConverterParseSucceed", func(t *testing.T) {
+	t.Run("invalid-tag-is-a-typo-and-with-custom-encoder-parse-succeed-but-parsed-tag-is-retained-as-original", func(t *testing.T) {
 		converter := func(charsetName string) (*encoding.Decoder, error) {
 			substitutions := map[string]*encoding.Decoder{
 				"ISO_2022_IR_6": charmap.Windows1252.NewDecoder(),
@@ -84,7 +83,7 @@ func TestParseFile_WithTagSpecificCharacterSetToEncodingNameConverter(t *testing
 			return substitutions[charsetName], nil
 		}
 		dataset, err := dicom.ParseFile(
-			aDicomFileHavingNonStandardSpecificCharacterSet,
+			"./testdata/malformed/specificCharacterSet_ISO_2022_IR_6.dcm",
 			nil,
 			dicom.WithCustomDecoderOfSpecificCharacterSet(converter))
 		if err != nil {
@@ -99,8 +98,8 @@ func TestParseFile_WithTagSpecificCharacterSetToEncodingNameConverter(t *testing
 			t.Fatalf("unexpected charset after parsing: %v", charset)
 		}
 	})
-	t.Run("WithNoCustomerConverterParseSucceedAndChangeTagInDicomBecauseOfFixingCommonSpelling", func(t *testing.T) {
-		dataset, err := dicom.ParseFile(aDicomFileHavingNonStandardSpecificCharacterSet, nil)
+	t.Run("invalid-tag-is-a-typo-and-with-no-custom-encoder-parse-succeed-and-parsed-tag-is-fixed-in-output", func(t *testing.T) {
+		dataset, err := dicom.ParseFile("./testdata/malformed/specificCharacterSet_ISO_2022_IR_6.dcm", nil)
 		if err != nil {
 			t.Fatalf("parsing dataset: %v", err)
 		}
@@ -110,6 +109,20 @@ func TestParseFile_WithTagSpecificCharacterSetToEncodingNameConverter(t *testing
 		}
 		charset := dicom.MustGetStrings(charsetElem.Value)[0]
 		if charset != "ISO 2022 IR 6" {
+			t.Fatalf("unexpected charset after parsing: %v", charset)
+		}
+	})
+	t.Run("invalid-tag-is-not-a-typo-but-with-custom-encoder-parse-succeed-and-parsed-tag-is-default-value", func(t *testing.T) {
+		dataset, err := dicom.ParseFile("./testdata/malformed/specificCharacterSet_invalid.dcm", nil)
+		if err != nil {
+			t.Fatalf("parsing dataset: %v", err)
+		}
+		charsetElem, err := dataset.FindElementByTag(tag.SpecificCharacterSet)
+		if err != nil {
+			t.Fatalf("find element after parsing: %v", err)
+		}
+		charset := dicom.MustGetStrings(charsetElem.Value)[0]
+		if charset != dicom.DefaultEncodingName {
 			t.Fatalf("unexpected charset after parsing: %v", charset)
 		}
 	})
@@ -130,12 +143,12 @@ func TestFixCommonSpellingErrorInSpecificCharacterSet(t *testing.T) {
 			wantOutput: "ISO_IR 13",
 		},
 		{
-			input:      "",
-			wantOutput: "",
+			input:      "invalid",
+			wantOutput: dicom.DefaultEncodingName,
 		},
 	} {
 		gotOutput := dicom.FixCommonSpellingErrorInSpecificCharacterSet(te.input)
-		if diff := cmp.Diff(gotOutput, te.wantOutput, cmp.AllowUnexported(test{})); diff != "" {
+		if diff := cmp.Diff(te.wantOutput, gotOutput, cmp.AllowUnexported(test{})); diff != "" {
 			t.Errorf("fixCommonSpellingErrorInSpecificCharacterSet(%s) unexpected value. diff: %s", te.input, diff)
 		}
 	}
