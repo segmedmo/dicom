@@ -12,6 +12,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/suyashkumar/dicom/pkg/tag"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/charmap"
 
 	"github.com/suyashkumar/dicom/pkg/frame"
 
@@ -75,19 +77,16 @@ func TestParseUntilEOF(t *testing.T) {
 func TestParseFile_WithTagSpecificCharacterSetToEncodingNameConverter(t *testing.T) {
 	aDicomFileHavingNonStandardSpecificCharacterSet := "./testdata/malformed/1.dcm"
 	t.Run("WithCustomConverterParseSucceed", func(t *testing.T) {
-		converter := func(origin string) string {
-			substitutions := map[string]string{
-				"ISO_2022_IR_6": "ISO_IR 13",
+		converter := func(charsetName string) (*encoding.Decoder, error) {
+			substitutions := map[string]*encoding.Decoder{
+				"ISO_2022_IR_6": charmap.Windows1252.NewDecoder(),
 			}
-			if sub, ok := substitutions[origin]; ok {
-				return sub
-			}
-			return origin
+			return substitutions[charsetName], nil
 		}
 		dataset, err := dicom.ParseFile(
 			aDicomFileHavingNonStandardSpecificCharacterSet,
 			nil,
-			dicom.WithTagSpecificCharacterSetToEncodingNameConverter(converter))
+			dicom.WithCustomDecoderOfSpecificCharacterSet(converter))
 		if err != nil {
 			t.Fatalf("parsing dataset: %v", err)
 		}
@@ -96,11 +95,11 @@ func TestParseFile_WithTagSpecificCharacterSetToEncodingNameConverter(t *testing
 			t.Fatalf("find element after parsing: %v", err)
 		}
 		charset := dicom.MustGetStrings(charsetElem.Value)[0]
-		if charset != "ISO_IR 13" {
+		if charset != "ISO_2022_IR_6" {
 			t.Fatalf("unexpected charset after parsing: %v", charset)
 		}
 	})
-	t.Run("WithNoCustomerConverterParseSucceedBecauseOfFixingCommonSpelling", func(t *testing.T) {
+	t.Run("WithNoCustomerConverterParseSucceedAndChangeTagInDicomBecauseOfFixingCommonSpelling", func(t *testing.T) {
 		dataset, err := dicom.ParseFile(aDicomFileHavingNonStandardSpecificCharacterSet, nil)
 		if err != nil {
 			t.Fatalf("parsing dataset: %v", err)

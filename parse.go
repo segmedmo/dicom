@@ -35,6 +35,7 @@ import (
 	"github.com/suyashkumar/dicom/pkg/frame"
 	"github.com/suyashkumar/dicom/pkg/tag"
 	"github.com/suyashkumar/dicom/pkg/uid"
+	"golang.org/x/text/encoding"
 )
 
 const (
@@ -194,15 +195,12 @@ func (p *Parser) Next() (*Element, error) {
 
 	if elem.Tag == tag.SpecificCharacterSet {
 		encodingNames := MustGetStrings(elem.Value)
-		for i := range encodingNames {
-			encodingNames[i] = p.reader.opts.tagSpecificCharacterSetToEncodingNameConverter(encodingNames[i])
-		}
-		cs, err := charset.ParseSpecificCharacterSet(encodingNames, false)
+		cs, err := charset.ParseSpecificCharacterSet(encodingNames, p.reader.opts.customDecoderOfSpecificCharacterSet)
 		if err != nil {
 			for i := range encodingNames {
 				encodingNames[i] = FixCommonSpellingErrorInSpecificCharacterSet(encodingNames[i])
 			}
-			cs, err = charset.ParseSpecificCharacterSet(encodingNames, true)
+			cs, err = charset.ParseSpecificCharacterSet(encodingNames, p.reader.opts.customDecoderOfSpecificCharacterSet)
 		}
 		if err != nil {
 			// unable to parse character set, hard error
@@ -249,29 +247,27 @@ type ParseOption func(*parseOptSet)
 
 // parseOptSet represents the flattened option set after all ParseOptions have been applied.
 type parseOptSet struct {
-	skipMetadataReadOnNewParserInit                bool
-	allowMismatchPixelDataLength                   bool
-	skipPixelData                                  bool
-	skipProcessingPixelDataValue                   bool
-	allowMissingMetaElementGroupLength             bool
-	tagSpecificCharacterSetToEncodingNameConverter func(string) string
+	skipMetadataReadOnNewParserInit     bool
+	allowMismatchPixelDataLength        bool
+	skipPixelData                       bool
+	skipProcessingPixelDataValue        bool
+	allowMissingMetaElementGroupLength  bool
+	customDecoderOfSpecificCharacterSet func(string) (*encoding.Decoder, error)
 }
 
 func toParseOptSet(opts ...ParseOption) parseOptSet {
-	optSet := parseOptSet{
-		tagSpecificCharacterSetToEncodingNameConverter: func(s string) string { return s },
-	}
+	optSet := parseOptSet{}
 	for _, opt := range opts {
 		opt(&optSet)
 	}
 	return optSet
 }
 
-// WithTagSpecificCharacterSetToEncodingNameConverter allows parser to map
-// non-standard character sets with standard ones when assessing encoding names
-func WithTagSpecificCharacterSetToEncodingNameConverter(handler func(string) string) ParseOption {
+// WithCustomDecoderOfSpecificCharacterSet allows parser to use custom decoder for
+// non-standard character sets when assessing decoder
+func WithCustomDecoderOfSpecificCharacterSet(handler func(string) (*encoding.Decoder, error)) ParseOption {
 	return func(set *parseOptSet) {
-		set.tagSpecificCharacterSetToEncodingNameConverter = handler
+		set.customDecoderOfSpecificCharacterSet = handler
 	}
 }
 
