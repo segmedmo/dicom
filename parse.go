@@ -25,7 +25,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"regexp"
 
@@ -228,16 +227,14 @@ func (p *Parser) Next() (*Element, error) {
 
 // FixCommonSpellingErrorInSpecificCharacterSet references _python_encoding_for_corrected_encoding in https://github.com/pydicom/pydicom/
 func FixCommonSpellingErrorInSpecificCharacterSet(specificCharacterSet string) string {
-	defaultSpecificCharacterSet := DefaultEncodingName // corresponds to iso-8859-1 in htmlEncodingNames in pkg/charset
-	fixed := defaultSpecificCharacterSet
+	fixed := DefaultEncodingName
 	if match := regexp.MustCompile(`^ISO.IR`).MatchString(specificCharacterSet); match {
 		fixed = "ISO_IR" + specificCharacterSet[6:]
 	} else if match := regexp.MustCompile(`^ISO.2022.IR.`).MatchString(specificCharacterSet); match {
 		fixed = "ISO 2022 IR " + specificCharacterSet[12:]
 	}
-	errLogger := log.New(os.Stderr, "", 0) // avoid altering the output for future use
 	if fixed != specificCharacterSet {
-		errLogger.Printf("Incorrect value for Specific Character Set '%s' - assuming %s", specificCharacterSet, fixed)
+		debug.Logf("Incorrect value for Specific Character Set '%s' - assuming %s", specificCharacterSet, fixed)
 	}
 	return fixed
 }
